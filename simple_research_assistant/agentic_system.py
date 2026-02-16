@@ -1,390 +1,551 @@
 """
-TRUE AGENTIC AI VERSION
-Using Autogen 0.4 - Proper agent framework with autonomy
+Research Orchestrator with Autogen 0.4 RoundRobin GroupChat
+- Uses RoundRobinGroupChat for agent coordination
+- Independent operations (no workflow required)
+- Working agents with proper async handling
 """
+from typing import Dict, Any, List, Optional, Callable
 import asyncio
-from typing import Dict, Any, List, Optional
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
-from autogen_agentchat.ui import Console
-from autogen_core.base import CancellationToken
-from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
+from autogen_agentchat.conditions import TextMentionTermination, MaxMessageTermination
+from autogen_ext.models import AzureOpenAIChatCompletionClient
+from autogen_core.components.models import UserMessage
+
 from config import config
 from pubmed_utils import search_pubmed
 
 
-class AgenticResearchSystem:
+class ResearchOrchestrator:
     """
-    TRUE AGENTIC AI SYSTEM
-    - Autonomous agents with decision-making
-    - Agent-to-agent communication
-    - Self-directed workflow
-    - Real Autogen framework
+    Autogen 0.4 Research Orchestrator with RoundRobin GroupChat
+    - Each function works independently
+    - Agents coordinate via RoundRobin pattern
+    - Direct API calls where possible for speed
     """
     
     def __init__(self):
-        """Initialize agentic system with autonomous agents"""
-        print("🤖 Initializing AGENTIC AI system...")
+        """Initialize orchestrator with Autogen 0.4 agents"""
+        print("🤖 Initializing Autogen 0.4 Research Orchestrator...")
         
-        # Create model client for all agents
+        # Create Azure OpenAI client
         self.model_client = AzureOpenAIChatCompletionClient(
-            model=config.AZURE_OPENAI_DEPLOYMENT,
-            api_version=config.AZURE_OPENAI_API_VERSION,
             azure_endpoint=config.AZURE_OPENAI_ENDPOINT,
             api_key=config.AZURE_OPENAI_API_KEY,
+            api_version=config.AZURE_OPENAI_API_VERSION,
+            model=config.AZURE_OPENAI_DEPLOYMENT,
+            model_capabilities={
+                "vision": False,
+                "function_calling": True,
+                "json_output": True,
+            }
         )
         
-        # Create autonomous agents
-        self.coordinator_agent = self._create_coordinator_agent()
-        self.literature_agent = self._create_literature_agent()
-        self.synthesis_agent = self._create_synthesis_agent()
-        self.extension_agent = self._create_extension_agent()
-        self.explainer_agent = self._create_explainer_agent()
-        self.advisor_agent = self._create_advisor_agent()
+        # Create agents
+        self._create_agents()
         
-        print("✅ Agentic AI system ready - 6 autonomous agents initialized")
+        print("✅ Autogen 0.4 Orchestrator initialized with RoundRobin GroupChat")
     
-    def _create_coordinator_agent(self) -> AssistantAgent:
-        """Coordinator - Decides workflow and delegates tasks"""
-        return AssistantAgent(
-            name="Coordinator",
-            model_client=self.model_client,
-            system_message="""You are the Coordinator Agent in a multi-agent research system.
-
-Your role:
-- Analyze user requests
-- Decide which agents to activate
-- Coordinate agent communication
-- Make autonomous decisions about workflow
-
-Available agents:
-1. Literature_Agent - Searches papers
-2. Synthesis_Agent - Summarizes papers
-3. Extension_Agent - Proposes future research
-4. Explainer_Agent - Explains concepts
-5. Advisor_Agent - Checks papers
-
-When user provides a research topic:
-1. Activate Literature_Agent for search
-2. If papers found, activate Synthesis_Agent
-3. Then activate Extension_Agent
-4. Coordinate their outputs
-
-When user asks to explain a concept:
-- Directly activate Explainer_Agent
-
-When user submits a paper:
-- Directly activate Advisor_Agent
-
-Make autonomous decisions. Communicate with other agents.""",
-        )
-    
-    def _create_literature_agent(self) -> AssistantAgent:
-        """Literature Agent - Autonomous paper search"""
-        return AssistantAgent(
-            name="Literature_Agent",
-            model_client=self.model_client,
-            system_message="""You are an autonomous Literature Search Agent.
-
-Your capabilities:
-- Search PubMed for relevant papers
-- Evaluate paper relevance
-- Extract key information
-- Decide search strategy autonomously
-
-When activated:
-1. Analyze the research topic
-2. Formulate optimal search query
-3. Request paper search (use search_papers tool)
-4. Filter and rank results
-5. Report findings to Coordinator
-
-Be proactive and thorough. Make your own decisions about search strategies.""",
-            tools=[self._create_search_tool()],
-        )
-    
-    def _create_synthesis_agent(self) -> AssistantAgent:
-        """Synthesis Agent - Autonomous analysis"""
-        return AssistantAgent(
-            name="Synthesis_Agent",
-            model_client=self.model_client,
-            system_message="""You are an autonomous Reading Synthesis Agent.
-
-Your capabilities:
-- Analyze research papers independently
-- Identify patterns and themes
-- Extract key findings
-- Make connections between papers
-
-When activated with papers:
-1. Read and analyze each paper
-2. Identify main contributions
-3. Extract methodologies
-4. Find common themes
-5. Synthesize into coherent summary
-
-Be analytical and insightful. Work autonomously.""",
-        )
-    
-    def _create_extension_agent(self) -> AssistantAgent:
-        """Extension Agent - Autonomous research planning"""
-        return AssistantAgent(
-            name="Extension_Agent",
-            model_client=self.model_client,
-            system_message="""You are an autonomous Future Research Extension Agent.
-
-Your capabilities:
-- Identify research gaps independently
-- Propose novel research directions
-- Design solution approaches
-- Assess feasibility autonomously
-
-When activated with synthesis:
-1. Analyze current research landscape
-2. Identify gaps and opportunities
-3. Propose 3-5 extensions
-4. Provide implementation approaches
-5. Assess difficulty and impact
-
-Be innovative and strategic. Make autonomous proposals.""",
-        )
-    
-    def _create_explainer_agent(self) -> AssistantAgent:
-        """Explainer Agent - Autonomous teaching"""
-        return AssistantAgent(
-            name="Explainer_Agent",
-            model_client=self.model_client,
-            system_message="""You are an autonomous Concept Explanation Agent.
-
-Your capabilities:
-- Explain complex topics independently
-- Choose appropriate analogies
-- Create relevant examples
-- Adapt explanation level
-
-When activated with a concept:
-1. Analyze the concept complexity
-2. Determine explanation approach
-3. Create simple definition
-4. Generate relevant examples
-5. Develop helpful analogies
-
-Be clear and engaging. Work autonomously.""",
-        )
-    
-    def _create_advisor_agent(self) -> AssistantAgent:
-        """Advisor Agent - Autonomous review"""
-        return AssistantAgent(
-            name="Advisor_Agent",
-            model_client=self.model_client,
-            system_message="""You are an autonomous Paper Advisory Agent.
-
-Your capabilities:
-- Review papers independently
-- Assess structure and format
-- Provide constructive feedback
-- Make submission recommendations
-
-When activated with a paper:
-1. Analyze paper structure
-2. Check required sections
-3. Evaluate formatting quality
-4. Identify improvements
-5. Provide actionable feedback
-
-Be thorough and constructive. Work autonomously.""",
-        )
-    
-    def _create_search_tool(self):
-        """Create tool for Literature Agent to search papers"""
-        async def search_papers(topic: str, max_results: int = 5) -> str:
-            """Search PubMed for papers"""
-            papers = search_pubmed(topic, max_results)
-            if not papers:
-                return "No papers found"
-            
-            result = []
-            for i, paper in enumerate(papers, 1):
-                result.append(
-                    f"Paper {i}: {paper['title']}\n"
-                    f"Authors: {', '.join(paper['authors'][:3])}\n"
-                    f"Abstract: {paper.get('abstract', 'N/A')[:200]}...\n"
-                    f"Link: {paper['link']}\n"
-                )
-            return "\n".join(result)
+    def _create_agents(self):
+        """Create all Autogen 0.4 agents"""
         
-        return search_papers
+        # Literature Agent - Searches and retrieves papers
+        self.literature_agent = AssistantAgent(
+            name="LiteratureAgent",
+            model_client=self.model_client,
+            system_message="""You are a Literature Search Agent.
+Your role: Search PubMed for research papers and format the results.
+
+When given a topic:
+1. Acknowledge the search request
+2. Format the papers clearly with titles, authors, journals, dates, and links
+3. Provide a count of papers found
+4. End your message with: LITERATURE_COMPLETE
+
+Be concise and structured."""
+        )
+        
+        # Synthesis Agent - Summarizes papers
+        self.synthesis_agent = AssistantAgent(
+            name="SynthesisAgent",
+            model_client=self.model_client,
+            system_message="""You are a Paper Synthesis Agent.
+Your role: Summarize research papers concisely.
+
+For each paper:
+- Main finding (1 sentence)
+- Method used (1 sentence)
+- Significance (1 sentence)
+
+Format: Paper 1: [summary], Paper 2: [summary], ...
+End your message with: SYNTHESIS_COMPLETE
+
+Be clear and concise."""
+        )
+        
+        # Extensions Agent - Proposes future research
+        self.extensions_agent = AssistantAgent(
+            name="ExtensionsAgent",
+            model_client=self.model_client,
+            system_message="""You are a Research Extensions Agent.
+Your role: Propose future research directions based on current papers.
+
+Generate 3 future research directions:
+1. Title (brief)
+2. Description (2 sentences)
+3. Solution approach (1 sentence)
+4. Difficulty (Easy/Medium/Hard)
+
+Format clearly with numbers.
+End your message with: EXTENSIONS_COMPLETE
+
+Be innovative and specific."""
+        )
+        
+        # Explainer Agent - Explains concepts
+        self.explainer_agent = AssistantAgent(
+            name="ExplainerAgent",
+            model_client=self.model_client,
+            system_message="""You are a Concept Explainer Agent.
+Your role: Explain complex concepts in simple terms.
+
+Include:
+1. Simple definition (2 sentences)
+2. Two concrete examples
+3. One analogy
+4. Why it matters
+
+Max 200 words. Be clear and accessible.
+End your message with: EXPLANATION_COMPLETE"""
+        )
+        
+        # Advisor Agent - Checks paper formatting
+        self.advisor_agent = AssistantAgent(
+            name="AdvisorAgent",
+            model_client=self.model_client,
+            system_message="""You are a Paper Formatting Advisor Agent.
+Your role: Review research papers for proper formatting.
+
+Check for:
+1. Abstract (present/missing)
+2. Introduction (present/missing)
+3. Methods (present/missing)
+4. Results (present/missing)
+5. Conclusion (present/missing)
+6. References (present/missing)
+
+Provide:
+- Score (0-100)
+- Missing sections
+- 3 quick recommendations
+
+End your message with: ADVISOR_COMPLETE"""
+        )
     
-    async def run_agentic_workflow(
-        self,
-        user_request: str,
-        task_type: str = "research"  # research, explain, review
+    async def search_literature(
+        self, 
+        topic: str, 
+        max_papers: int = 5,
+        progress_callback: Optional[Callable] = None
     ) -> Dict[str, Any]:
         """
-        Run AGENTIC workflow - Agents communicate autonomously
+        Search for literature using LiteratureAgent
+        Direct PubMed API call for speed + agent formatting
         
         Args:
-            user_request: User's request
-            task_type: Type of task (research, explain, review)
+            topic: Research topic
+            max_papers: Max papers to retrieve
+            progress_callback: Optional progress callback
             
         Returns:
-            Results from agent collaboration
+            Literature results
         """
-        print(f"\n🤖 Starting AGENTIC workflow: {task_type}")
-        print(f"📝 Request: {user_request}\n")
+        print(f"🔍 [LiteratureAgent] Searching PubMed for: {topic}")
         
-        # Select agents based on task type
-        if task_type == "research":
-            agents = [
-                self.coordinator_agent,
-                self.literature_agent,
-                self.synthesis_agent,
-                self.extension_agent
-            ]
-            max_turns = 10
+        if progress_callback:
+            progress_callback("Searching for papers", 20)
         
-        elif task_type == "explain":
-            agents = [
-                self.coordinator_agent,
-                self.explainer_agent
-            ]
-            max_turns = 3
+        # Direct PubMed search (fast, reliable)
+        papers = search_pubmed(topic, max_papers)
         
-        elif task_type == "review":
-            agents = [
-                self.coordinator_agent,
-                self.advisor_agent
-            ]
-            max_turns = 3
+        if not papers:
+            return {
+                "papers": [],
+                "formatted": "No papers found for this topic.",
+                "count": 0
+            }
         
-        else:
-            agents = [self.coordinator_agent]
-            max_turns = 5
+        if progress_callback:
+            progress_callback("Formatting results", 30)
         
-        # Create agentic team with RoundRobin (agents take turns autonomously)
-        team = RoundRobinGroupChat(
-            participants=agents,
-            max_turns=max_turns
-        )
+        # Format papers with LiteratureAgent
+        papers_text = self._format_papers_for_agent(papers)
         
-        # Run agentic conversation
-        print("🔄 Agents are now communicating autonomously...\n")
-        
+        # Use agent to format output
         try:
-            # Create cancellation token
-            cancellation_token = CancellationToken()
+            # Create single-agent "team" for independent operation
+            termination = TextMentionTermination("LITERATURE_COMPLETE") | MaxMessageTermination(3)
             
-            # Run the team
-            result = await team.run(
-                task=user_request,
-                cancellation_token=cancellation_token
+            team = RoundRobinGroupChat(
+                [self.literature_agent],
+                termination_condition=termination
             )
             
-            # Extract messages from agent conversation
-            messages = []
-            async for message in result.messages:
-                agent_name = message.source if hasattr(message, 'source') else "Unknown"
-                content = message.content if hasattr(message, 'content') else str(message)
-                messages.append({
-                    "agent": agent_name,
-                    "message": content
-                })
-                print(f"🤖 {agent_name}: {content[:100]}...")
+            # Run agent
+            message = f"""Format these {len(papers)} research papers clearly:
+
+{papers_text}
+
+Provide a structured list with all details."""
             
-            print("\n✅ Agentic workflow completed!\n")
+            result = await team.run(task=UserMessage(content=message, source="user"))
+            
+            # Extract formatted output
+            formatted = self._extract_agent_response(result)
+            
+        except Exception as e:
+            print(f"⚠️ Agent formatting failed, using fallback: {e}")
+            formatted = self._format_papers(papers)
+        
+        if progress_callback:
+            progress_callback("Papers retrieved", 40)
+        
+        print(f"✅ [LiteratureAgent] Found {len(papers)} papers")
+        
+        return {
+            "papers": papers,
+            "formatted": formatted,
+            "count": len(papers)
+        }
+    
+    async def synthesize_papers(
+        self,
+        papers: List[Dict],
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Synthesize papers using SynthesisAgent
+        
+        Args:
+            papers: List of papers to synthesize
+            progress_callback: Optional progress callback
+            
+        Returns:
+            Synthesis results
+        """
+        if not papers:
+            return {"synthesis": "No papers to synthesize", "summaries": []}
+        
+        print(f"📖 [SynthesisAgent] Synthesizing {len(papers)} papers...")
+        
+        if progress_callback:
+            progress_callback("Synthesizing papers", 60)
+        
+        try:
+            # Create papers text
+            papers_text = "\n\n".join([
+                f"Paper {i}: {p['title']}\nAbstract: {p.get('abstract', 'N/A')[:300]}"
+                for i, p in enumerate(papers, 1)
+            ])
+            
+            # Use SynthesisAgent
+            termination = TextMentionTermination("SYNTHESIS_COMPLETE") | MaxMessageTermination(3)
+            
+            team = RoundRobinGroupChat(
+                [self.synthesis_agent],
+                termination_condition=termination
+            )
+            
+            message = f"""Summarize these {len(papers)} research papers:
+
+{papers_text}
+
+Provide concise summaries for each paper."""
+            
+            result = await team.run(task=UserMessage(content=message, source="user"))
+            
+            synthesis = self._extract_agent_response(result)
+            
+            if progress_callback:
+                progress_callback("Synthesis complete", 80)
+            
+            print("✅ [SynthesisAgent] Synthesis complete")
             
             return {
-                "task_type": task_type,
-                "request": user_request,
-                "messages": messages,
-                "final_result": messages[-1]["message"] if messages else "No result",
-                "is_agentic": True,
-                "agents_used": [agent.name for agent in agents]
+                "synthesis": synthesis,
+                "summaries": [{"paper": i, "summary": synthesis} for i in range(len(papers))]
             }
         
         except Exception as e:
-            print(f"❌ Agentic workflow error: {e}")
+            print(f"❌ [SynthesisAgent] Error: {e}")
             return {
-                "task_type": task_type,
-                "error": str(e),
-                "is_agentic": True
+                "synthesis": f"Error during synthesis: {str(e)}",
+                "summaries": []
             }
     
-    async def explain_concept_agentic(self, concept: str, context: str = None) -> str:
+    async def generate_extensions(
+        self,
+        papers_or_synthesis: Any,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
         """
-        Explain concept using AGENTIC approach
-        Explainer agent works autonomously
+        Generate research extensions using ExtensionsAgent
+        
+        Args:
+            papers_or_synthesis: Papers or synthesis results
+            progress_callback: Optional progress callback
+            
+        Returns:
+            Research extensions
         """
-        request = f"Explain the concept '{concept}' in simple terms."
-        if context:
-            request += f" Context: {context}"
+        print("🔮 [ExtensionsAgent] Generating research extensions...")
         
-        result = await self.run_agentic_workflow(
-            user_request=request,
-            task_type="explain"
-        )
+        if progress_callback:
+            progress_callback("Generating research extensions", 90)
         
-        return result.get("final_result", "")
+        try:
+            # Extract context
+            if isinstance(papers_or_synthesis, dict):
+                context = papers_or_synthesis.get('synthesis', '')
+            elif isinstance(papers_or_synthesis, str):
+                context = papers_or_synthesis
+            else:
+                context = str(papers_or_synthesis)
+            
+            # Use ExtensionsAgent
+            termination = TextMentionTermination("EXTENSIONS_COMPLETE") | MaxMessageTermination(3)
+            
+            team = RoundRobinGroupChat(
+                [self.extensions_agent],
+                termination_condition=termination
+            )
+            
+            message = f"""Based on this research:
+
+{context[:1000]}
+
+Generate 3 innovative future research directions."""
+            
+            result = await team.run(task=UserMessage(content=message, source="user"))
+            
+            extensions = self._extract_agent_response(result)
+            
+            if progress_callback:
+                progress_callback("Extensions generated", 100)
+            
+            print("✅ [ExtensionsAgent] Extensions generated")
+            
+            return {
+                "extensions": extensions,
+                "count": 3
+            }
+        
+        except Exception as e:
+            print(f"❌ [ExtensionsAgent] Error: {e}")
+            return {
+                "extensions": f"Error generating extensions: {str(e)}",
+                "count": 0
+            }
     
-    async def review_paper_agentic(self, title: str, content: str) -> Dict[str, Any]:
+    async def explain_concept(
+        self,
+        concept: str,
+        context: Optional[str] = None
+    ) -> str:
         """
-        Review paper using AGENTIC approach
-        Advisor agent works autonomously
+        Explain a concept using ExplainerAgent
+        INDEPENDENT (no workflow needed)
+        
+        Args:
+            concept: Concept to explain
+            context: Optional context
+            
+        Returns:
+            Simple explanation
         """
-        request = f"""Review this paper for submission:
+        print(f"💡 [ExplainerAgent] Explaining: {concept}")
+        
+        try:
+            # Use ExplainerAgent
+            termination = TextMentionTermination("EXPLANATION_COMPLETE") | MaxMessageTermination(3)
+            
+            team = RoundRobinGroupChat(
+                [self.explainer_agent],
+                termination_condition=termination
+            )
+            
+            message = f"""Explain the concept '{concept}' in simple terms."""
+            
+            if context:
+                message += f"\n\nContext: {context[:200]}"
+            
+            result = await team.run(task=UserMessage(content=message, source="user"))
+            
+            explanation = self._extract_agent_response(result)
+            
+            print("✅ [ExplainerAgent] Explanation generated")
+            
+            return explanation
+        
+        except Exception as e:
+            print(f"❌ [ExplainerAgent] Error: {e}")
+            return f"Error explaining concept: {str(e)}"
+    
+    async def check_paper(
+        self,
+        title: str,
+        content: str
+    ) -> Dict[str, Any]:
+        """
+        Check paper formatting using AdvisorAgent
+        INDEPENDENT (no workflow needed)
+        
+        Args:
+            title: Paper title
+            content: Paper content
+            
+        Returns:
+            Formatting feedback
+        """
+        print(f"📝 [AdvisorAgent] Checking paper: {title}")
+        
+        try:
+            # Only check first 1500 chars for speed
+            content_preview = content[:1500]
+            
+            # Use AdvisorAgent
+            termination = TextMentionTermination("ADVISOR_COMPLETE") | MaxMessageTermination(3)
+            
+            team = RoundRobinGroupChat(
+                [self.advisor_agent],
+                termination_condition=termination
+            )
+            
+            message = f"""Review this research paper for formatting:
 
 Title: {title}
 
 Content (preview):
-{content[:1000]}
+{content_preview}
 
-Provide:
-1. Structure assessment
-2. Missing sections
-3. Formatting score (0-100)
-4. Recommendations"""
+Check for all required sections and provide feedback."""
+            
+            result = await team.run(task=UserMessage(content=message, source="user"))
+            
+            feedback = self._extract_agent_response(result)
+            
+            print("✅ [AdvisorAgent] Paper checked")
+            
+            return {"feedback": feedback}
         
-        result = await self.run_agentic_workflow(
-            user_request=request,
-            task_type="review"
-        )
+        except Exception as e:
+            print(f"❌ [AdvisorAgent] Error: {e}")
+            return {"feedback": f"Error checking paper: {str(e)}"}
+    
+    async def run_full_workflow(
+        self,
+        topic: str,
+        max_papers: int = 5,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Run complete workflow using RoundRobinGroupChat
+        ALL STEPS with agent coordination
+        
+        Args:
+            topic: Research topic
+            max_papers: Max papers
+            progress_callback: Progress callback
+            
+        Returns:
+            Complete results
+        """
+        print(f"\n🔬 [RoundRobin] Starting full research workflow: {topic}\n")
+        
+        # Step 1: Literature (LiteratureAgent)
+        lit_result = await self.search_literature(topic, max_papers, progress_callback)
+        
+        if lit_result['count'] == 0:
+            return {
+                "topic": topic,
+                "literature": "No papers found",
+                "synthesis": "Cannot synthesize - no papers",
+                "extensions": "Cannot generate extensions - no papers",
+                "status": "completed_with_no_results"
+            }
+        
+        # Step 2: Synthesis (SynthesisAgent)
+        syn_result = await self.synthesize_papers(lit_result['papers'], progress_callback)
+        
+        # Step 3: Extensions (ExtensionsAgent)
+        ext_result = await self.generate_extensions(syn_result, progress_callback)
+        
+        if progress_callback:
+            progress_callback("Workflow completed", 100)
+        
+        print("\n✅ [RoundRobin] Full workflow completed!\n")
         
         return {
-            "feedback": result.get("final_result", ""),
-            "is_agentic": True,
-            "agent_used": "Advisor_Agent"
+            "topic": topic,
+            "literature": lit_result['formatted'],
+            "synthesis": syn_result['synthesis'],
+            "extensions": ext_result['extensions'],
+            "status": "completed"
         }
+    
+    def _format_papers(self, papers: List[Dict]) -> str:
+        """Format papers for display (fallback)"""
+        result = []
+        for i, paper in enumerate(papers, 1):
+            result.append(f"""
+**Paper {i}: {paper['title']}**
+- Authors: {', '.join(paper['authors'][:3])}
+- Journal: {paper['journal']}
+- Date: {paper['pubdate']}
+- Link: {paper['link']}
+- DOI: {paper['doi']}
+""")
+        
+        return "\n".join(result)
+    
+    def _format_papers_for_agent(self, papers: List[Dict]) -> str:
+        """Format papers for agent processing"""
+        result = []
+        for i, paper in enumerate(papers, 1):
+            result.append(f"""Paper {i}:
+Title: {paper['title']}
+Authors: {', '.join(paper['authors'][:3])}
+Journal: {paper['journal']}
+Date: {paper['pubdate']}
+Link: {paper['link']}
+DOI: {paper['doi']}
+Abstract: {paper.get('abstract', 'N/A')[:200]}
+""")
+        return "\n\n".join(result)
+    
+    def _extract_agent_response(self, result) -> str:
+        """Extract text response from agent result"""
+        try:
+            # Get last message from agent
+            if hasattr(result, 'messages') and result.messages:
+                last_message = result.messages[-1]
+                if hasattr(last_message, 'content'):
+                    return last_message.content
+            
+            # Fallback
+            return str(result)
+        except Exception as e:
+            print(f"⚠️ Error extracting response: {e}")
+            return str(result)
 
 
 # Global instance
-_agentic_system = None
+_orchestrator = None
 
 
-def get_agentic_system() -> AgenticResearchSystem:
-    """Get or create agentic system"""
-    global _agentic_system
-    if _agentic_system is None:
-        _agentic_system = AgenticResearchSystem()
-    return _agentic_system
-
-
-# Example usage
-async def example_agentic_research():
-    """Example: How agentic AI works"""
-    
-    system = get_agentic_system()
-    
-    # Agentic research workflow
-    result = await system.run_agentic_workflow(
-        user_request="Find recent papers on deep learning in medical imaging and propose future research directions",
-        task_type="research"
-    )
-    
-    print("\n📊 AGENTIC RESULT:")
-    print(f"Agents used: {result['agents_used']}")
-    print(f"Agent messages: {len(result['messages'])}")
-    print(f"Is agentic: {result['is_agentic']}")
-
-
-if __name__ == "__main__":
-    asyncio.run(example_agentic_research())
+def get_orchestrator() -> ResearchOrchestrator:
+    """Get or create orchestrator instance"""
+    global _orchestrator
+    if _orchestrator is None:
+        _orchestrator = ResearchOrchestrator()
+    return _orchestrator
